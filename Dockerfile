@@ -1,4 +1,4 @@
-ARG PHP_VERSION=8.5
+ ARG PHP_VERSION=8.5
 
 # Using PHP-Apache image
 FROM php:${PHP_VERSION}-apache
@@ -41,9 +41,10 @@ ARG TARGETARCH
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-# Install APT dependencies
+# Install APT dependencies (upgrade first to pick up Debian security fixes)
 RUN a2enmod rewrite
 RUN apt-get -y update \
+  && apt-get -y upgrade \
   && apt-get install --no-install-recommends -y \
   wget \
   libfreetype6-dev \
@@ -59,11 +60,15 @@ RUN apt-get -y update \
 # Install, Configure and Enable PHP extensions
 ## opcache is always built in since PHP 8.5
 RUN docker-php-ext-install "-j$(nproc)" gettext intl && \
-  { php -m | grep -q "Zend OPcache" || docker-php-ext-install opcache; } && \
+  { php -r 'exit(extension_loaded("Zend OPcache") ? 0 : 1);' || docker-php-ext-install opcache; } && \
   docker-php-ext-install mysqli pdo pdo_mysql pdo_pgsql && \
   docker-php-ext-enable mysqli && \
   docker-php-ext-configure gd --with-freetype=/usr/include/ --with-jpeg=/usr/include/ --with-webp=/usr/include/ && \
   docker-php-ext-install "-j$(nproc)" gd
+
+# Kernel headers and libc dev files are only needed to compile extensions
+RUN apt-get purge -y --auto-remove linux-libc-dev libc6-dev \
+  && rm -rf /var/lib/apt/lists/*
 
 # Enabling apache vhost
 COPY vhost.conf /etc/apache2/sites-available/vhost.conf
